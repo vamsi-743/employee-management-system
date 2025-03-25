@@ -47,7 +47,6 @@ async function getEmployees(req, res) {
 
 //create employee
 async function createEmployee(req, res) {
-  const transaction = await connectToDatabase().transaction();
   try {
     const { EMSemployee, EMSdesignation, EMSdepartment } =
       await connectToDatabase();
@@ -58,11 +57,9 @@ async function createEmployee(req, res) {
         EMS_employee_id: req.body.EMS_employee_id,
         organization_id: req.body.organization_id,
       },
-      transaction,
     });
 
     if (existingEmployee) {
-      await transaction.rollback();
       return res.status(400).json({
         error: "Employee already exists within the organization",
       });
@@ -74,7 +71,6 @@ async function createEmployee(req, res) {
         designation_id: req.body.designation_id,
         organization_id: req.body.organization_id,
       },
-      transaction,
     });
     if (designation) {
       await designation.update(
@@ -82,7 +78,6 @@ async function createEmployee(req, res) {
           designation_total_employees:
             designation.designation_total_employees + 1,
         },
-        { transaction }
       );
     }
 
@@ -92,23 +87,19 @@ async function createEmployee(req, res) {
         department_id: req.body.department_id,
         organization_id: req.body.organization_id,
       },
-      transaction,
     });
     if (department) {
       await department.update(
         {
           department_total_employees: department.department_total_employees + 1,
         },
-        { transaction }
       );
     }
 
     // create employee
-    const employee = await EMSemployee.create(req.body, { transaction });
-    await transaction.commit();
+    const employee = await EMSemployee.create(req.body);
     return res.status(200).json(employee);
   } catch (error) {
-    await transaction.rollback();
     if (error.name === "SequelizeUniqueConstraintError") {
       return res.status(400).json({
         error: error.message,
@@ -336,7 +327,7 @@ async function getDashboard(req, res) {
 
 // update employee
 async function updateEmployee(req, res) {
-  const transaction = await connectToDatabase().transaction();
+  const {sequelize} = await connectToDatabase()
   try {
     const { EMSemployee, EMSdesignation, EMSdepartment } =
       await connectToDatabase();
@@ -344,11 +335,9 @@ async function updateEmployee(req, res) {
     // Find the current employee details
     const currentEmployee = await EMSemployee.findOne({
       where: { EMS_employee_id: req.params.employee_id },
-      transaction,
     });
 
     if (!currentEmployee) {
-      await transaction.rollback();
       return res.status(404).json({ error: "Employee not found" });
     }
 
@@ -363,11 +352,9 @@ async function updateEmployee(req, res) {
     // Update the employee details
     const [updatedRows] = await EMSemployee.update(req.body, {
       where: { EMS_employee_id: req.params.employee_id },
-      transaction,
     });
 
     if (updatedRows === 0) {
-      await transaction.rollback();
       return res.status(400).json({ error: "No rows updated" });
     }
 
@@ -377,7 +364,6 @@ async function updateEmployee(req, res) {
       if (currentEmployee.designation_id) {
         const previousDesignation = await EMSdesignation.findOne({
           where: { designation_id: currentEmployee.designation_id },
-          transaction,
         });
         if (previousDesignation) {
           await previousDesignation.update(
@@ -385,7 +371,6 @@ async function updateEmployee(req, res) {
               designation_total_employees:
                 previousDesignation.designation_total_employees - 1,
             },
-            { transaction }
           );
         }
       }
@@ -393,7 +378,6 @@ async function updateEmployee(req, res) {
       // Increase the count in the new designation
       const newDesignation = await EMSdesignation.findOne({
         where: { designation_id: req.body.designation_id },
-        transaction,
       });
       if (newDesignation) {
         await newDesignation.update(
@@ -401,7 +385,6 @@ async function updateEmployee(req, res) {
             designation_total_employees:
               newDesignation.designation_total_employees + 1,
           },
-          { transaction }
         );
       }
     }
@@ -412,7 +395,6 @@ async function updateEmployee(req, res) {
       if (currentEmployee.department_id) {
         const previousDepartment = await EMSdepartment.findOne({
           where: { department_id: currentEmployee.department_id },
-          transaction,
         });
         if (previousDepartment) {
           await previousDepartment.update(
@@ -420,7 +402,6 @@ async function updateEmployee(req, res) {
               department_total_employees:
                 previousDepartment.department_total_employees - 1,
             },
-            { transaction }
           );
         }
       }
@@ -428,7 +409,6 @@ async function updateEmployee(req, res) {
       // Increase the count in the new department
       const newDepartment = await EMSdepartment.findOne({
         where: { department_id: req.body.department_id },
-        transaction,
       });
       if (newDepartment) {
         await newDepartment.update(
@@ -436,15 +416,12 @@ async function updateEmployee(req, res) {
             department_total_employees:
               newDepartment.department_total_employees + 1,
           },
-          { transaction }
         );
       }
     }
 
-    await transaction.commit();
     return res.status(200).json({ message: "Employee updated successfully" });
   } catch (error) {
-    await transaction.rollback();
     return res.status(500).json({ error: error.message });
   }
 }
@@ -464,7 +441,6 @@ async function getEmployeeIdList(req, res) {
 
 // create bulk employees
 async function createBulkEmployees(req, res) {
-  const transaction = await connectToDatabase().transaction();
   try {
     const { EMSemployee, EMSdesignation, EMSdepartment, EMSorganization } =
       await connectToDatabase();
@@ -475,7 +451,6 @@ async function createBulkEmployees(req, res) {
       // check organization_id on EMS_organization table
       const organization = await EMSorganization.findOne({
         where: { organization_id: emp.organization_id },
-        transaction,
       });
       if (!organization) {
         return res
@@ -484,7 +459,6 @@ async function createBulkEmployees(req, res) {
       }
       const existingEmployee = await EMSemployee.findOne({
         where: { EMS_employee_id: emp.EMS_employee_id },
-        transaction,
       });
       if (!existingEmployee) {
         // Check and create designation if it doesn't exist
@@ -493,7 +467,6 @@ async function createBulkEmployees(req, res) {
             designation_name: emp.designation_name,
             organization_id: emp.organization_id,
           },
-          transaction,
         });
         if (!designation) {
           designation = await EMSdesignation.create(
@@ -503,7 +476,6 @@ async function createBulkEmployees(req, res) {
               designation_description: emp.designation_description,
               designation_total_employees: 1,
             },
-            { transaction }
           );
         } else {
           await designation.update(
@@ -511,7 +483,6 @@ async function createBulkEmployees(req, res) {
               designation_total_employees:
                 designation.designation_total_employees + 1,
             },
-            { transaction }
           );
         }
 
@@ -521,7 +492,6 @@ async function createBulkEmployees(req, res) {
             department_name: emp.department_name,
             organization_id: emp.organization_id,
           },
-          transaction,
         });
         if (!department) {
           department = await EMSdepartment.create(
@@ -531,7 +501,6 @@ async function createBulkEmployees(req, res) {
               department_description: emp.department_description,
               department_total_employees: 1,
             },
-            { transaction }
           );
         } else {
           await department.update(
@@ -539,7 +508,6 @@ async function createBulkEmployees(req, res) {
               department_total_employees:
                 department.department_total_employees + 1,
             },
-            { transaction }
           );
         }
 
@@ -549,11 +517,9 @@ async function createBulkEmployees(req, res) {
             EMS_employee_id: emp.EMS_employee_id,
             organization_id: emp.organization_id,
           },
-          transaction,
         });
 
         if (existingEmployee) {
-          await transaction.rollback();
           return res.status(400).json({
             error: "Employee already exists within the organization",
           });
@@ -566,16 +532,13 @@ async function createBulkEmployees(req, res) {
             designation_id: designation.designation_id,
             department_id: department.department_id,
           },
-          { transaction }
         );
 
         newEmployees.push(newEmployee);
       }
     }
-    await transaction.commit();
     return res.status(200).json(newEmployees);
   } catch (error) {
-    await transaction.rollback();
     console.log(error);
     return res.status(500).json({ error: error.message });
   }
