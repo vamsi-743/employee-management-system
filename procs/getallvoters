@@ -1,0 +1,71 @@
+CREATE DEFINER=`admin`@`%` PROCEDURE `GetVotersList`(
+IN p_MandId int,
+IN p_DivId int,
+IN p_SachiId int,
+IN p_PartNo int,
+IN P_VillNo int,
+IN p_gender int,
+IN p_results_per_page int, 
+IN p_pagenumber int, 
+IN p_sort_column varchar(100), 
+IN p_sort_dir varchar(5))
+BEGIN
+        
+    SET p_results_per_page = IFNULL(p_results_per_page, 50);
+    SET p_pagenumber = IFNULL(p_pagenumber, 1);
+    if p_pagenumber<=0 then  
+		set p_pagenumber=1;
+    end if;
+    set @p_pagination_offset = p_results_per_page * (p_pagenumber-1);
+    -- strings can be null, empty string '', or a value
+    SET p_sort_column = IF (NULLIF(p_sort_column, ' ') IS NULL, 'voter_id', p_sort_column);
+    SET p_sort_dir = IF (NULLIF(p_sort_dir, ' ') IS NULL, 'DESC', p_sort_dir);
+	
+    Set @SqlQuery = CONCAT(
+        "WITH FilteredData AS (
+        SELECT 
+        v.*,
+		ps.volunteer_id as poll_survey_volunteer_id,
+		ps.intrested_party as opinionparty,
+		ps.voted_party,
+		ps.createdon as surveydatetime,
+        v.phone_no as voter_phone_no,v.age as voter_age , v.voter_pk as voter_pkk,
+		(SELECT lookup_valuename FROM lookup WHERE lookup_pk = v.caste_id) AS caste_name,
+		(SELECT lookup_valuename FROM lookup WHERE lookup_pk = v.religion_id) AS religion_name,
+		(SELECT lookup_valuename FROM lookup WHERE lookup_pk = v.guardian) AS guardian_type,
+		(SELECT lookup_valuename FROM lookup WHERE lookup_pk = v.gender) AS gender_type
+		FROM  voters v left join poll_survey ps on v.voter_pk = ps.voter_pk
+		left join states s on v.state_id = s.state_pk
+		left join districts d on v.district_id = d.district_pk
+        left join constituencies c on v.consistency_id = c.consistency_pk  
+        left join mandals m on v.mandal_id = m.mandal_pk   
+        left join divisions dv on v.division_id = dv.division_pk
+        left join sachivalayam sv on v.sachivalayam_id = sv.sachivalayam_pk
+		left join parts p on v.part_no = p.part_no
+		left join villages vl on v.village_id = vl.village_pk
+		left join users u on v.volunteer_id = u.user_pk  
+		WHERE
+		v.is_newregistration = false AND
+        v.state_id = 5 AND 
+        v.district_id = 6 AND
+        v.consistency_id = 3",
+        IF(p_MandId IS NOT NULL, CONCAT(" AND v.mandal_id = ", p_MandId), ""),
+        IF(p_DivId IS NOT NULL, CONCAT(" AND v.division_id = ", p_DivId), ""),
+        IF(p_SachiId IS NOT NULL, CONCAT(" AND v.sachivalayam_id = ", p_SachiId), ""),
+        IF(p_PartNo IS NOT NULL, CONCAT(" AND v.part_no = ", p_PartNo), ""),
+        IF(P_VillNo IS NOT NULL, CONCAT(" AND v.village_id = ", p_VillNo), ""),
+        IF(p_gender IS NOT NULL, CONCAT(" AND v.gender = ", p_gender), ""),
+        CONCAT(") 
+        SELECT *,
+        (SELECT COUNT(*) FROM FilteredData) AS count,
+        (SELECT COUNT(*) FROM FilteredData WHERE opinionparty IS NOT NULL) AS completed
+        FROM FilteredData
+        ORDER BY surveydatetime DESC
+        "),
+        ' LIMIT ',@p_pagination_offset,',', p_results_per_page);
+		
+        PREPARE dynamic_statement FROM @SqlQuery;
+		EXECUTE dynamic_statement ;
+        -- USING @pp_pagination_offset, @pp_results_per_page;
+        DEALLOCATE PREPARE  dynamic_statement;
+END

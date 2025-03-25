@@ -1,0 +1,95 @@
+CREATE DEFINER=`u276789778_polling_survey`@`%` PROCEDURE `GetVotersList6`(
+	IN p_DistId INT,
+    IN p_ConsId INT,
+    IN p_MandId INT,
+    IN p_DivId INT,
+    IN p_SachiId INT,
+    IN p_PartNo INT,
+    IN p_VillNo INT,
+    IN p_Gender INT,
+	IN p_ReligionId INT,
+    IN p_CasteId INT,
+    IN p_Disability INT,
+    IN p_GovtEmployee INT,
+    IN p_age_min INT,
+    IN p_age_max INT,
+    IN p_results_per_page INT, 
+    IN p_pagenumber INT, 
+    IN p_sort_column VARCHAR(100),
+    IN p_sort_dir VARCHAR(5)
+)
+BEGIN
+    DECLARE p_pagination_offset INT;
+    DECLARE SqlQuery TEXT;
+    
+    SET @p_results_per_page = IFNULL(p_results_per_page, 50);
+    SET @p_pagenumber = IFNULL(p_pagenumber, 1);
+
+    IF p_pagenumber <= 0 THEN
+        SET @p_pagenumber = 1;
+    END IF;
+
+    -- Calculate pagination offset
+    SET @p_pagination_offset = @p_results_per_page * (@p_pagenumber - 1);
+
+    SET @p_sort_column = IF (NULLIF(p_sort_column, '') IS NULL, 'surveydatetime', p_sort_column);
+    SET @p_sort_dir = IF (NULLIF(p_sort_dir, '') IS NULL, 'DESC', p_sort_dir);
+
+    -- Build the dynamic SQL query with placeholders
+    
+    SET @SqlQuery = CONCAT(
+        'WITH FilteredData AS (
+            SELECT 
+                v.*,
+                tm.ticket_master_pk,
+                tm.navaratnalu_id,
+                ps.volunteer_id AS poll_survey_volunteer_id,
+                ps.intrested_party AS opinionparty,
+                ps.voted_party,
+                ps.createdon AS surveydatetime,
+                v.phone_no AS voter_phone_no, v.age AS voter_age, v.voter_pk AS voter_pkk,
+                (SELECT lookup_valuename FROM lookup WHERE lookup_pk = v.caste_id) AS caste_name,
+                (SELECT lookup_valuename FROM lookup WHERE lookup_pk = v.religion_id) AS religion_name,
+                (SELECT lookup_valuename FROM lookup WHERE lookup_pk = v.guardian) AS guardian_type,
+                (SELECT lookup_valuename FROM lookup WHERE lookup_pk = v.gender) AS gender_type
+            FROM  
+                voters v 
+            LEFT JOIN 
+                poll_survey ps ON v.voter_pk = ps.voter_pk
+            LEFT JOIN 
+                users u ON v.volunteer_id = u.user_pk  
+			LEFT JOIN 
+				ticket_master tm On v.voter_pk = tm.voter_pk AND tm.is_open = 1   
+            WHERE
+                v.is_newregistration = false AND
+                v.state_id = 5 AND 
+                v.district_id = 6 ',
+		IF(p_DistId IS NOT NULL, CONCAT(' AND v.district_id = ',p_DistId), ''),
+		IF(p_ConsId IS NOT NULL, CONCAT(' AND v.consistency_id = ',p_ConsId), ''),
+        IF(p_MandId IS NOT NULL, CONCAT(' AND v.mandal_id = ',p_MandId), ''),
+        IF(p_DivId IS NOT NULL, CONCAT(' AND v.division_id = ',p_DivId), ''),
+        IF(p_SachiId IS NOT NULL, CONCAT(' AND v.sachivalayam_id = ',p_SachiId), ''),
+        IF(p_PartNo IS NOT NULL, CONCAT(' AND v.part_no = ',p_PartNo), ''),
+        IF(p_VillNo IS NOT NULL, CONCAT(' AND v.village_id = ',p_VillNo), ''),
+        IF(p_Gender IS NOT NULL, CONCAT(' AND v.gender = ', p_Gender), ''),
+        IF(p_ReligionId IS NOT NULL, CONCAT(' AND v.religion_id = ', p_ReligionId), ''),
+        IF(p_CasteId IS NOT NULL, CONCAT(' AND v.caste_id = ', p_CasteId), ''),
+        IF(p_Disability IS NOT NULL, CONCAT(' AND v.disability = ', p_disability), ''),
+        IF(p_GovtEmployee IS NOT NULL, CONCAT(' AND v.govt_employee = ', p_GovtEmployee), ''),
+        IF(p_age_min IS NOT NULL and p_age_max IS NOT NULL, CONCAT(' AND v.age BETWEEN ', p_age_min, ' AND ', p_age_max),''),
+        IF(p_age_min IS NOT NULL and p_age_max IS NULL, CONCAT(' AND v.age > ', p_age_min),''),
+        ') 
+        SELECT *,
+        (SELECT COUNT(*) FROM FilteredData) AS count,
+        (SELECT COUNT(*) FROM FilteredData WHERE opinionparty IS NOT NULL) AS completed
+        FROM FilteredData
+        ORDER BY ', @p_sort_column, ' ', @p_sort_dir, '
+        LIMIT ?, ?'
+    );
+	
+    -- Prepare and execute the dynamic SQL query using placeholders
+    PREPARE dynamic_statement FROM @SqlQuery;
+    
+    EXECUTE dynamic_statement USING @p_pagination_offset, @p_results_per_page;
+    DEALLOCATE PREPARE dynamic_statement;
+END

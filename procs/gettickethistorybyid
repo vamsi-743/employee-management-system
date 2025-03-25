@@ -1,0 +1,52 @@
+CREATE DEFINER=`u276789778_polling_survey`@`%` PROCEDURE `GetTicketHistoryById`(
+	IN p_voterId INT,
+    IN p_ticketId INT,
+    IN p_results_per_page INT, 
+    IN p_pagenumber INT, 
+    IN p_sort_column VARCHAR(100),
+    IN p_sort_dir VARCHAR(5)
+)
+BEGIN
+    DECLARE p_pagination_offset INT;
+    DECLARE SqlQuery TEXT;
+    
+    SET @p_results_per_page = IFNULL(p_results_per_page, 50);
+    SET @p_pagenumber = IFNULL(p_pagenumber, 1);
+
+    IF p_pagenumber <= 0 THEN
+        SET @p_pagenumber = 1;
+    END IF;
+
+    -- Calculate pagination offset
+    SET @p_pagination_offset = @p_results_per_page * (@p_pagenumber - 1);
+
+    SET @p_sort_column = IF (NULLIF(p_sort_column, '') IS NULL, 'ticket_history_pk', p_sort_column);
+    SET @p_sort_dir = IF (NULLIF(p_sort_dir, '') IS NULL, 'DESC', p_sort_dir);
+
+    -- Build the dynamic SQL query with placeholders
+    
+    SET @SqlQuery = CONCAT(
+        'WITH FilteredData AS (
+            select th.*, v.voter_id, v.voter_pk, v.voter_name, u.user_pk u_user_pk,u.username from ticket_history th
+			left join ticket_master tm On th.ticket_master_pk = tm.ticket_master_pk
+			Left join voters v On tm.voter_pk = v.voter_pk
+			left join users u ON th.user_pk = u.user_pk  
+            WHERE
+                v.is_newregistration = false AND
+                v.state_id = 5 ',
+		IF(p_ticketId IS NOT NULL, CONCAT(' AND th.ticket_master_pk = ',p_ticketId), ''),
+		IF(p_voterId IS NOT NULL, CONCAT(' AND tm.voter_pk = ',p_voterId), ''),
+        ') 
+        SELECT *,
+        (SELECT COUNT(*) FROM FilteredData) AS count
+        FROM FilteredData
+        ORDER BY ', @p_sort_column, ' ', @p_sort_dir, '
+        LIMIT ?, ?'
+    );
+	
+    -- Prepare and execute the dynamic SQL query using placeholders
+    PREPARE dynamic_statement FROM @SqlQuery;
+    
+    EXECUTE dynamic_statement USING @p_pagination_offset, @p_results_per_page;
+    DEALLOCATE PREPARE dynamic_statement;
+END
