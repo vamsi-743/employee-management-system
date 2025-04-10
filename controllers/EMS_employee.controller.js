@@ -585,17 +585,9 @@ async function deleteEmployee(req, res) {
   try {
     const { EMSemployee, EMSsalary, EMSloan } = await connectToDatabase();
     const employee_id = req.params.employee_id;
-    // delete salary history on employee_id
-    await EMSsalary.destroy({
-      where: { employee_id: employee_id },
-    });
-    // delete loan history on employee_id
-    await EMSloan.destroy({
-      where: { employee_id: employee_id },
-    });
     // delete employee
     await EMSemployee.destroy({
-      where: { employee_id: employee_id },
+      where: { EMS_employee_id: employee_id },
     });
     return res.status(200).json({ message: "Employee deleted successfully" });
   } catch (error) {
